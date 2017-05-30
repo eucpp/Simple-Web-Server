@@ -12,6 +12,8 @@
 #include <mutex>
 #include <type_traits>
 
+#include "macro.hpp"
+
 #ifndef CASE_INSENSITIVE_EQUALS_AND_HASH
 #define CASE_INSENSITIVE_EQUALS_AND_HASH
 //Based on http://www.boost.org/doc/libs/1_60_0/doc/html/unordered/hash_equality.html
@@ -50,11 +52,11 @@ namespace SimpleWeb {
             std::istream content;
 
             std::unordered_multimap<std::string, std::string, case_insensitive_hash, case_insensitive_equals> header;
-            
-        private:
-            boost::asio::streambuf content_buffer;
-            
+
             Response(): content(&content_buffer) {}
+        private:
+
+            boost::asio::streambuf content_buffer;
         };
         
         class Config {
@@ -73,7 +75,7 @@ namespace SimpleWeb {
         /// Set before calling request
         Config config;
         
-        std::shared_ptr<Response> request(const std::string& request_type, const std::string& path="/", boost::string_ref content="",
+        ptr_t(Response) request(const std::string& request_type, const std::string& path="/", boost::string_ref content="",
                 const std::map<std::string, std::string>& header=std::map<std::string, std::string>()) {
             auto corrected_path=path;
             if(corrected_path=="")
@@ -126,7 +128,7 @@ namespace SimpleWeb {
             return request_read();
         }
         
-        std::shared_ptr<Response> request(const std::string& request_type, const std::string& path, std::iostream& content,
+        ptr_t(Response) request(const std::string& request_type, const std::string& path, std::iostream& content,
                 const std::map<std::string, std::string>& header=std::map<std::string, std::string>()) {
             auto corrected_path=path;
             if(corrected_path=="")
@@ -211,13 +213,13 @@ namespace SimpleWeb {
         
         virtual void connect()=0;
         
-        std::shared_ptr<boost::asio::deadline_timer> get_timeout_timer(size_t timeout=0) {
+        ptr_t(boost::asio::deadline_timer) get_timeout_timer(size_t timeout=0) {
             if(timeout==0)
                 timeout=config.timeout;
             if(timeout==0)
                 return nullptr;
             
-            auto timer=std::make_shared<boost::asio::deadline_timer>(io_service);
+            auto timer=new_args_(boost::asio::deadline_timer, io_service);
             timer->expires_from_now(boost::posix_time::seconds(timeout));
             timer->async_wait([this](const boost::system::error_code& ec) {
                 if(!ec) {
@@ -227,7 +229,7 @@ namespace SimpleWeb {
             return timer;
         }
         
-        void parse_response_header(const std::shared_ptr<Response> &response) const {
+        void parse_response_header(ptr_in(Response) response) const {
             std::string line;
             getline(response->content, line);
             size_t version_end=line.find(' ');
@@ -253,8 +255,8 @@ namespace SimpleWeb {
             }
         }
         
-        std::shared_ptr<Response> request_read() {
-            std::shared_ptr<Response> response(new Response());
+        ptr_t(Response) request_read() {
+            ptr_t(Response) response = new_(Response);
             
             boost::asio::streambuf chunked_streambuf;
             
@@ -316,7 +318,7 @@ namespace SimpleWeb {
             return response;
         }
         
-        void request_read_chunked(const std::shared_ptr<Response> &response, boost::asio::streambuf &streambuf) {
+        void request_read_chunked(ptr_in(Response) response, boost::asio::streambuf &streambuf) {
             auto timer=get_timeout_timer();
             boost::asio::async_read_until(*socket, response->content_buffer, "\r\n",
                                       [this, &response, &streambuf, timer](const boost::system::error_code& ec, size_t bytes_transferred) {

@@ -21,9 +21,39 @@ if(APPLE)
     set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
 endif()
 
+find_library(AllocGC NAMES liballocgc
+        PATHS
+        /usr/lib
+        /usr/lib64
+        /usr/local/lib
+        /usr/local/lib64
+    )
+
+option(SHARED_PTR OFF)
+option(PRECISE_GC_SERIAL OFF)
+option(PRECISE_GC_CMS OFF)
+
+set(SHARED_PTR ON)
+#set(PRECISE_GC_SERIAL ON)
+#set(PRECISE_GC_CMS ON)
+
 add_executable(http_examples http_examples.cpp)
 target_link_libraries(http_examples ${Boost_LIBRARIES})
 target_link_libraries(http_examples ${CMAKE_THREAD_LIBS_INIT})
+
+if(SHARED_PTR)
+    add_definitions(-DSHARED_PTR)
+endif()
+
+if(PRECISE_GC_SERIAL)
+    target_link_libraries(http_examples ${AllocGC})
+    add_definitions(-DPRECISE_GC_SERIAL)
+endif()
+
+if(PRECISE_GC_CMS)
+    target_link_libraries(http_examples ${AllocGC})
+    add_definitions(-DPRECISE_GC_CMS)
+endif()
 
 #TODO: add requirement for version 1.0.1g (can it be done in one line?)
 find_package(OpenSSL)

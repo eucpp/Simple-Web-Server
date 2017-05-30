@@ -15,6 +15,8 @@
 #include "crypto.hpp"
 #endif
 
+#include "macro.hpp"
+
 using namespace std;
 //Added for the json-example:
 using namespace boost::property_tree;
@@ -23,8 +25,7 @@ typedef SimpleWeb::Server<SimpleWeb::HTTP> HttpServer;
 typedef SimpleWeb::Client<SimpleWeb::HTTP> HttpClient;
 
 //Added for the default_resource example
-void default_resource_send(const HttpServer &server, const shared_ptr<HttpServer::Response> &response,
-                           const shared_ptr<ifstream> &ifs);
+void default_resource_send(const HttpServer &server, ptr_in(HttpServer::Response) response, ptr_in(ifstream) ifs);
 
 int main() {
     //HTTP-server at port 8080 using 1 thread
@@ -35,7 +36,7 @@ int main() {
     
     //Add resources using path-regex and method-string, and an anonymous function
     //POST-example for the path /string, responds the posted string
-    server.resource["^/string$"]["POST"]=[](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.resource["^/string$"]["POST"]=[](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         //Retrieve string:
         auto content=request->content.string();
         //request->content.string() is a convenience function for:
@@ -54,7 +55,7 @@ int main() {
     //  "lastName": "Smith",
     //  "age": 25
     //}
-    server.resource["^/json$"]["POST"]=[](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.resource["^/json$"]["POST"]=[](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         try {
             ptree pt;
             read_json(request->content, pt);
@@ -73,7 +74,7 @@ int main() {
 
     //GET-example for the path /info
     //Responds with request-information
-    server.resource["^/info$"]["GET"]=[](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.resource["^/info$"]["GET"]=[](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         stringstream content_stream;
         content_stream << "<h1>Request from " << request->remote_endpoint_address << " (" << request->remote_endpoint_port << ")</h1>";
         content_stream << request->method << " " << request->path << " HTTP/" << request->http_version << "<br>";
@@ -89,13 +90,13 @@ int main() {
     
     //GET-example for the path /match/[number], responds with the matched string in path (number)
     //For instance a request GET /match/123 will receive: 123
-    server.resource["^/match/([0-9]+)$"]["GET"]=[&server](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.resource["^/match/([0-9]+)$"]["GET"]=[&server](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         string number=request->path_match[1];
         *response << "HTTP/1.1 200 OK\r\nContent-Length: " << number.length() << "\r\n\r\n" << number;
     };
     
     //Get example simulating heavy work in a separate thread
-    server.resource["^/work$"]["GET"]=[&server](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    server.resource["^/work$"]["GET"]=[&server](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) /*request*/) {
         thread work_thread([response] {
             this_thread::sleep_for(chrono::seconds(5));
             string message="Work done";
@@ -108,7 +109,7 @@ int main() {
     //Will respond with content in the web/-directory, and its subdirectories.
     //Default file: index.html
     //Can for instance be used to retrieve an HTML 5 client that uses REST-resources on this server
-    server.default_resource["GET"]=[&server](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.default_resource["GET"]=[&server](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         try {
             auto web_root_path=boost::filesystem::canonical("web");
             auto path=boost::filesystem::canonical(web_root_path/request->path);
@@ -146,7 +147,7 @@ int main() {
             // }
 #endif
 
-            auto ifs=make_shared<ifstream>();
+            auto ifs=new_(ifstream);
             ifs->open(path.string(), ifstream::in | ios::binary | ios::ate);
             
             if(*ifs) {
@@ -190,8 +191,8 @@ int main() {
     return 0;
 }
 
-void default_resource_send(const HttpServer &server, const shared_ptr<HttpServer::Response> &response,
-                           const shared_ptr<ifstream> &ifs) {
+void default_resource_send(const HttpServer &server, ptr_in(HttpServer::Response) response,
+                           ptr_in(ifstream) ifs) {
     //read and send 128 KB at a time
     static vector<char> buffer(131072); // Safe when server is running on one thread
     streamsize read_length;

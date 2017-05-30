@@ -12,6 +12,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "macro.hpp"
+
 #ifndef CASE_INSENSITIVE_EQUALS_AND_HASH
 #define CASE_INSENSITIVE_EQUALS_AND_HASH
 //Based on http://www.boost.org/doc/libs/1_60_0/doc/html/unordered/hash_equality.html
@@ -66,11 +68,10 @@ namespace SimpleWeb {
 
             boost::asio::streambuf streambuf;
 
-            std::shared_ptr<socket_type> socket;
-
-            Response(const std::shared_ptr<socket_type> &socket): std::ostream(&streambuf), socket(socket) {}
-
+            ptr_t(socket_type) socket;
         public:
+            Response(ptr_in(socket_type) socket): std::ostream(&streambuf), socket(socket) {}
+
             size_t size() {
                 return streambuf.size();
             }
@@ -142,7 +143,6 @@ namespace SimpleWeb {
                 return result;
             }
 
-        private:
             Request(const socket_type &socket): content(streambuf) {
                 try {
                     remote_endpoint_address=socket.lowest_layer().remote_endpoint().address().to_string();
@@ -150,7 +150,8 @@ namespace SimpleWeb {
                 }
                 catch(...) {}
             }
-            
+        private:
+
             boost::asio::streambuf streambuf;
         };
         
@@ -189,18 +190,18 @@ namespace SimpleWeb {
     public:
         /// Warning: do not add or remove resources after start() is called
         std::map<regex_orderable, std::map<std::string,
-            std::function<void(std::shared_ptr<typename ServerBase<socket_type>::Response>, std::shared_ptr<typename ServerBase<socket_type>::Request>)> > > resource;
+            std::function<void(ptr_t(typename ServerBase<socket_type>::Response), ptr_t(typename ServerBase<socket_type>::Request))> > > resource;
         
         std::map<std::string,
-            std::function<void(std::shared_ptr<typename ServerBase<socket_type>::Response>, std::shared_ptr<typename ServerBase<socket_type>::Request>)> > default_resource;
+            std::function<void(ptr_t(typename ServerBase<socket_type>::Response), ptr_t(typename ServerBase<socket_type>::Request))> > default_resource;
         
-        std::function<void(std::shared_ptr<typename ServerBase<socket_type>::Request>, const boost::system::error_code&)> on_error;
+        std::function<void(ptr_t(typename ServerBase<socket_type>::Request), const boost::system::error_code&)> on_error;
         
-        std::function<void(std::shared_ptr<socket_type> socket, std::shared_ptr<typename ServerBase<socket_type>::Request>)> on_upgrade;
+        std::function<void(ptr_t(socket_type) socket, ptr_t(typename ServerBase<socket_type>::Request))> on_upgrade;
         
         virtual void start() {
             if(!io_service)
-                io_service=std::make_shared<boost::asio::io_service>();
+                io_service=new_(boost::asio::io_service);
 
             if(io_service->stopped())
                 io_service->reset();
@@ -245,7 +246,8 @@ namespace SimpleWeb {
         }
         
         ///Use this function if you need to recursively send parts of a longer message
-        void send(const std::shared_ptr<Response> &response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
+        void send(ptr_in(Response) response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
+            this->send(*pin(response), callback);
             boost::asio::async_write(*response->socket, response->streambuf, [this, response, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
                 if(callback)
                     callback(ec);
@@ -254,7 +256,7 @@ namespace SimpleWeb {
 
         /// If you have your own boost::asio::io_service, store its pointer here before running start().
         /// You might also want to set config.thread_pool_size to 0.
-        std::shared_ptr<boost::asio::io_service> io_service;
+        ptr_t(boost::asio::io_service) io_service;
     protected:
         std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor;
         std::vector<std::thread> threads;
@@ -263,11 +265,11 @@ namespace SimpleWeb {
         
         virtual void accept()=0;
         
-        std::shared_ptr<boost::asio::deadline_timer> get_timeout_timer(const std::shared_ptr<socket_type> &socket, long seconds) {
+        ptr_t(boost::asio::deadline_timer) get_timeout_timer(ptr_in(socket_type) socket, long seconds) {
             if(seconds==0)
                 return nullptr;
             
-            auto timer=std::make_shared<boost::asio::deadline_timer>(*io_service);
+            auto timer=new_args_(boost::asio::deadline_timer, *io_service);
             timer->expires_from_now(boost::posix_time::seconds(seconds));
             timer->async_wait([socket](const boost::system::error_code& ec){
                 if(!ec) {
@@ -279,10 +281,9 @@ namespace SimpleWeb {
             return timer;
         }
         
-        void read_request_and_content(const std::shared_ptr<socket_type> &socket) {
+        void read_request_and_content(ptr_in(socket_type) socket) {
             //Create new streambuf (Request::streambuf) for async_read_until()
-            //shared_ptr is used to pass temporary objects to the asynchronous functions
-            std::shared_ptr<Request> request(new Request(*socket));
+            ptr_t(Request) request = new_args_(Request, *socket);
 
             //Set timeout on the following boost::asio::async-read or write function
             auto timer=this->get_timeout_timer(socket, config.timeout_request);
@@ -339,7 +340,7 @@ namespace SimpleWeb {
             });
         }
 
-        bool parse_request(const std::shared_ptr<Request> &request) const {
+        bool parse_request(ptr_in(Request) request) const {
             std::string line;
             getline(request->content, line);
             size_t method_end;
@@ -380,7 +381,7 @@ namespace SimpleWeb {
             return true;
         }
 
-        void find_resource(const std::shared_ptr<socket_type> &socket, const std::shared_ptr<Request> &request) {
+        void find_resource(ptr_in(socket_type) socket, ptr_in(Request) request) {
             //Upgrade connection
             if(on_upgrade) {
                 auto it=request->header.find("Upgrade");
@@ -406,20 +407,30 @@ namespace SimpleWeb {
                 write_response(socket, request, it->second);
             }
         }
-        
-        void write_response(const std::shared_ptr<socket_type> &socket, const std::shared_ptr<Request> &request, 
-                std::function<void(std::shared_ptr<typename ServerBase<socket_type>::Response>,
-                                   std::shared_ptr<typename ServerBase<socket_type>::Request>)>& resource_function) {
-            //Set timeout on the following boost::asio::async-read or write function
-            auto timer=this->get_timeout_timer(socket, config.timeout_content);
 
-            auto response=std::shared_ptr<Response>(new Response(socket), [this, request, timer](Response *response_ptr) {
-                auto response=std::shared_ptr<Response>(response_ptr);
-                this->send(response, [this, response, request, timer](const boost::system::error_code& ec) {
+        void send(Response& response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
+            boost::asio::async_write(*(response.socket), response.streambuf, [this, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
+                if(callback)
+                    callback(ec);
+            });
+        }
+
+        class SendGuard {
+            ServerBase* server;
+            ptr_t(Request)  request;
+            ptr_t(boost::asio::deadline_timer) timer;
+        public:
+            Response response;
+
+            SendGuard(ptr_in(socket_type) socket, ServerBase* server_, ptr_in(Request) request_, ptr_in(boost::asio::deadline_timer) timer_)
+                : server(server_), request(request_), timer(timer_), response(socket)  {}
+
+            ~SendGuard() {
+                server->send(response, [this](const boost::system::error_code& ec) {
                     if(timer)
                         timer->cancel();
                     if(!ec) {
-                        if (response->close_connection_after_response)
+                        if (response.close_connection_after_response)
                             return;
 
                         auto range=request->header.equal_range("Connection");
@@ -427,17 +438,26 @@ namespace SimpleWeb {
                             if(boost::iequals(it->second, "close")) {
                                 return;
                             } else if (boost::iequals(it->second, "keep-alive")) {
-                                this->read_request_and_content(response->socket);
+                                server->read_request_and_content(response.socket);
                                 return;
                             }
                         }
                         if(request->http_version >= "1.1")
-                            this->read_request_and_content(response->socket);
+                            server->read_request_and_content(response.socket);
                     }
-                    else if(on_error)
-                        on_error(request, ec);
+                    else if(server->on_error)
+                        server->on_error(request, ec);
                 });
-            });
+            }
+        };
+        
+        void write_response(ptr_in(socket_type) socket, ptr_in(Request) request,
+                std::function<void(ptr_t(typename ServerBase<socket_type>::Response),
+                                   ptr_t(typename ServerBase<socket_type>::Request))>& resource_function) {
+            //Set timeout on the following boost::asio::async-read or write function
+            auto timer=this->get_timeout_timer(socket, config.timeout_content);
+            auto guard=new_args_(SendGuard, socket, this, request, timer);
+            auto response=ptr_to(guard, SendGuard, Response, &SendGuard::response);
 
             try {
                 resource_function(response, request);
@@ -472,9 +492,9 @@ namespace SimpleWeb {
         void accept() {
             //Create new socket for this connection
             //Shared_ptr is used to pass temporary objects to the asynchronous functions
-            auto socket=std::make_shared<HTTP>(*io_service);
+            auto socket=new_args_(HTTP, *io_service);
                         
-            acceptor->async_accept(*socket, [this, socket](const boost::system::error_code& ec){
+            acceptor->async_accept(*pin(socket), [this, socket](const boost::system::error_code& ec){
                 //Immediately start accepting a new connection (if io_service hasn't been stopped)
                 if (ec != boost::asio::error::operation_aborted)
                     accept();
@@ -486,7 +506,7 @@ namespace SimpleWeb {
                     this->read_request_and_content(socket);
                 }
                 else if(on_error)
-                    on_error(std::shared_ptr<Request>(new Request(*socket)), ec);
+                    on_error(new_args_(Request, *socket), ec);
             });
         }
     };
