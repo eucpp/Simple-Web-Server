@@ -15,6 +15,18 @@
 #include "crypto.hpp"
 #endif
 
+#ifdef PRECISE_GC_SERIAL
+    #include <liballocgc/liballocgc.hpp>
+    using namespace allocgc;
+    using namespace allocgc::serial;
+#endif
+
+#ifdef PRECISE_GC_CMS
+    #include <liballocgc/liballocgc.hpp>
+    using namespace allocgc;
+    using namespace allocgc::cms;
+#endif
+
 #include "macro.hpp"
 
 using namespace std;
@@ -28,6 +40,12 @@ typedef SimpleWeb::Client<SimpleWeb::HTTP> HttpClient;
 void default_resource_send(const HttpServer &server, ptr_in(HttpServer::Response) response, ptr_in(ifstream) ifs);
 
 int main() {
+    #if defined(PRECISE_GC_SERIAL) || defined(PRECISE_GC_CMS)
+//        enable_logging(gc_loglevel::DEBUG);
+        register_main_thread();
+    #endif
+
+
     //HTTP-server at port 8080 using 1 thread
     //Unless you do more heavy non-threaded processing in the resources,
     //1 thread is usually faster than several threads
@@ -44,7 +62,7 @@ int main() {
         //ss << request->content.rdbuf();
         //string content=ss.str();
         
-        *response << "HTTP/1.1 200 OK\r\nContent-Length: " << content.length() << "\r\n\r\n" << content;
+        *pin(response) << "HTTP/1.1 200 OK\r\nContent-Length: " << content.length() << "\r\n\r\n" << content;
     };
     
     //POST-example for the path /json, responds firstName+" "+lastName from the posted json
@@ -62,13 +80,13 @@ int main() {
 
             string name=pt.get<string>("firstName")+" "+pt.get<string>("lastName");
 
-            *response << "HTTP/1.1 200 OK\r\n"
+            *pin(response) << "HTTP/1.1 200 OK\r\n"
                       << "Content-Type: application/json\r\n"
                       << "Content-Length: " << name.length() << "\r\n\r\n"
                       << name;
         }
         catch(exception& e) {
-            *response << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << strlen(e.what()) << "\r\n\r\n" << e.what();
+            *pin(response) << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << strlen(e.what()) << "\r\n\r\n" << e.what();
         }
     };
 
@@ -85,14 +103,14 @@ int main() {
         //find length of content_stream (length received using content_stream.tellp())
         content_stream.seekp(0, ios::end);
         
-        *response <<  "HTTP/1.1 200 OK\r\nContent-Length: " << content_stream.tellp() << "\r\n\r\n" << content_stream.rdbuf();
+        *pin(response) <<  "HTTP/1.1 200 OK\r\nContent-Length: " << content_stream.tellp() << "\r\n\r\n" << content_stream.rdbuf();
     };
     
     //GET-example for the path /match/[number], responds with the matched string in path (number)
     //For instance a request GET /match/123 will receive: 123
     server.resource["^/match/([0-9]+)$"]["GET"]=[&server](ptr_t(HttpServer::Response) response, ptr_t(HttpServer::Request) request) {
         string number=request->path_match[1];
-        *response << "HTTP/1.1 200 OK\r\nContent-Length: " << number.length() << "\r\n\r\n" << number;
+        *pin(response) << "HTTP/1.1 200 OK\r\nContent-Length: " << number.length() << "\r\n\r\n" << number;
     };
     
     //Get example simulating heavy work in a separate thread
@@ -100,7 +118,7 @@ int main() {
         thread work_thread([response] {
             this_thread::sleep_for(chrono::seconds(5));
             string message="Work done";
-            *response << "HTTP/1.1 200 OK\r\nContent-Length: " << message.length() << "\r\n\r\n" << message;
+            *pin(response) << "HTTP/1.1 200 OK\r\nContent-Length: " << message.length() << "\r\n\r\n" << message;
         });
         work_thread.detach();
     };
@@ -150,11 +168,11 @@ int main() {
             auto ifs=new_(ifstream);
             ifs->open(path.string(), ifstream::in | ios::binary | ios::ate);
             
-            if(*ifs) {
+            if(*pin(ifs)) {
                 auto length=ifs->tellg();
                 ifs->seekg(0, ios::beg);
                 
-                *response << "HTTP/1.1 200 OK\r\n" << cache_control << etag << "Content-Length: " << length << "\r\n\r\n";
+                *pin(response) << "HTTP/1.1 200 OK\r\n" << cache_control << etag << "Content-Length: " << length << "\r\n\r\n";
                 default_resource_send(server, response, ifs);
             }
             else
@@ -162,18 +180,18 @@ int main() {
         }
         catch(const exception &e) {
             string content="Could not open path "+request->path+": "+e.what();
-            *response << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << content.length() << "\r\n\r\n" << content;
+            *pin(response) << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << content.length() << "\r\n\r\n" << content;
         }
     };
-    
-    thread server_thread([&server](){
+
+    thread server_thread = create_thread([&server](){
         //Start server
         server.start();
     });
     
     //Wait for server to start so that the client can connect
     this_thread::sleep_for(chrono::seconds(1));
-    
+
     //Client examples
     HttpClient client("localhost:8080");
     auto r1=client.request("GET", "/match/123");

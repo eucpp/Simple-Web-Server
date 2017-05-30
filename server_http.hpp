@@ -248,7 +248,7 @@ namespace SimpleWeb {
         ///Use this function if you need to recursively send parts of a longer message
         void send(ptr_in(Response) response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
             this->send(*pin(response), callback);
-            boost::asio::async_write(*response->socket, response->streambuf, [this, response, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
+            boost::asio::async_write(*pin(response->socket), response->streambuf, [this, response, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
                 if(callback)
                     callback(ec);
             });
@@ -288,7 +288,7 @@ namespace SimpleWeb {
             //Set timeout on the following boost::asio::async-read or write function
             auto timer=this->get_timeout_timer(socket, config.timeout_request);
                         
-            boost::asio::async_read_until(*socket, request->streambuf, "\r\n\r\n",
+            boost::asio::async_read_until(*pin(socket), request->streambuf, "\r\n\r\n",
                     [this, socket, request, timer](const boost::system::error_code& ec, size_t bytes_transferred) {
                 if(timer)
                     timer->cancel();
@@ -317,7 +317,7 @@ namespace SimpleWeb {
                         if(content_length>num_additional_bytes) {
                             //Set timeout on the following boost::asio::async-read or write function
                             auto timer=this->get_timeout_timer(socket, config.timeout_content);
-                            boost::asio::async_read(*socket, request->streambuf,
+                            boost::asio::async_read(*pin(socket), request->streambuf,
                                     boost::asio::transfer_exactly(content_length-num_additional_bytes),
                                     [this, socket, request, timer]
                                     (const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
@@ -409,7 +409,7 @@ namespace SimpleWeb {
         }
 
         void send(Response& response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
-            boost::asio::async_write(*(response.socket), response.streambuf, [this, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
+            boost::asio::async_write(*pin(response.socket), response.streambuf, [this, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
                 if(callback)
                     callback(ec);
             });

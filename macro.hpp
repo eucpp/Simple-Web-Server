@@ -38,6 +38,8 @@
     #define const_array_pointer_cast_(T, ptr) allocgc::pointers::const_pointer_cast<T[]>(ptr)
     #define reinterpret_array_pointer_cast_(T, ptr) allocgc::pointers::reinterpret_pointer_cast<T[]>(ptr)
 
+    #define ptr_to(ptr, T, R, Mem) allocgc::pointers::take_interior<T, R, Mem>(ptr)
+
 #elif defined(PRECISE_GC_CMS)
 
     #define ptr_t(T) allocgc::cms::gc_ptr<T>
@@ -66,6 +68,8 @@
 
     #define const_array_pointer_cast_(T, ptr) allocgc::pointers::const_pointer_cast<T[]>(ptr)
     #define reinterpret_array_pointer_cast_(T, ptr) allocgc::pointers::reinterpret_pointer_cast<T[]>(ptr)
+
+    #define ptr_to(ptr, T, R, Mem) allocgc::pointers::take_interior<T, R, Mem>(ptr)
 
 #elif defined(SHARED_PTR)
 
@@ -105,6 +109,7 @@
     #define reinterpret_array_pointer_cast_(T, ptr) reinterpret_pointer_cast<T>(ptr)
 
     #define ptr_to(ptr, T, R, Mem) std::shared_ptr<R>(ptr, &(ptr.get()->*Mem))
+
 #endif
 
 #endif //MACRO_HPP

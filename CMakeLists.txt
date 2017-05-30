@@ -33,8 +33,8 @@ option(SHARED_PTR OFF)
 option(PRECISE_GC_SERIAL OFF)
 option(PRECISE_GC_CMS OFF)
 
-set(SHARED_PTR ON)
-#set(PRECISE_GC_SERIAL ON)
+#set(SHARED_PTR ON)
+set(PRECISE_GC_SERIAL ON)
 #set(PRECISE_GC_CMS ON)
 
 add_executable(http_examples http_examples.cpp)
