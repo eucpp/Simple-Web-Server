@@ -248,10 +248,6 @@ namespace SimpleWeb {
         ///Use this function if you need to recursively send parts of a longer message
         void send(ptr_in(Response) response, const std::function<void(const boost::system::error_code&)>& callback=nullptr) const {
             this->send(*pin(response), callback);
-            boost::asio::async_write(*pin(response->socket), response->streambuf, [this, response, callback](const boost::system::error_code& ec, size_t /*bytes_transferred*/) {
-                if(callback)
-                    callback(ec);
-            });
         }
 
         /// If you have your own boost::asio::io_service, store its pointer here before running start().
@@ -414,50 +410,13 @@ namespace SimpleWeb {
                     callback(ec);
             });
         }
-
-        class SendGuard {
-            ServerBase* server;
-            ptr_t(Request)  request;
-            ptr_t(boost::asio::deadline_timer) timer;
-        public:
-            Response response;
-
-            SendGuard(ptr_in(socket_type) socket, ServerBase* server_, ptr_in(Request) request_, ptr_in(boost::asio::deadline_timer) timer_)
-                : server(server_), request(request_), timer(timer_), response(socket)  {}
-
-            ~SendGuard() {
-                server->send(response, [this](const boost::system::error_code& ec) {
-                    if(timer)
-                        timer->cancel();
-                    if(!ec) {
-                        if (response.close_connection_after_response)
-                            return;
-
-                        auto range=request->header.equal_range("Connection");
-                        for(auto it=range.first;it!=range.second;it++) {
-                            if(boost::iequals(it->second, "close")) {
-                                return;
-                            } else if (boost::iequals(it->second, "keep-alive")) {
-                                server->read_request_and_content(response.socket);
-                                return;
-                            }
-                        }
-                        if(request->http_version >= "1.1")
-                            server->read_request_and_content(response.socket);
-                    }
-                    else if(server->on_error)
-                        server->on_error(request, ec);
-                });
-            }
-        };
         
         void write_response(ptr_in(socket_type) socket, ptr_in(Request) request,
                 std::function<void(ptr_t(typename ServerBase<socket_type>::Response),
                                    ptr_t(typename ServerBase<socket_type>::Request))>& resource_function) {
             //Set timeout on the following boost::asio::async-read or write function
             auto timer=this->get_timeout_timer(socket, config.timeout_content);
-            auto guard=new_args_(SendGuard, socket, this, request, timer);
-            auto response=ptr_to(guard, SendGuard, Response, &SendGuard::response);
+            auto response = new_args_(Response, socket);
 
             try {
                 resource_function(response, request);
@@ -467,6 +426,29 @@ namespace SimpleWeb {
                     on_error(request, boost::system::error_code(boost::system::errc::operation_canceled, boost::system::generic_category()));
                 return;
             }
+
+            this->send(response, [this, timer, response, request](const boost::system::error_code& ec) {
+                if(timer)
+                    timer->cancel();
+                if(!ec) {
+                    if (response->close_connection_after_response)
+                        return;
+
+                    auto range=request->header.equal_range("Connection");
+                    for(auto it=range.first;it!=range.second;it++) {
+                        if(boost::iequals(it->second, "close")) {
+                            return;
+                        } else if (boost::iequals(it->second, "keep-alive")) {
+                            read_request_and_content(response->socket);
+                            return;
+                        }
+                    }
+                    if(request->http_version >= "1.1")
+                        read_request_and_content(response->socket);
+                }
+                else if(on_error)
+                    on_error(request, ec);
+            });
         }
     };
     

@@ -36,6 +36,14 @@ using namespace boost::property_tree;
 typedef SimpleWeb::Server<SimpleWeb::HTTP> HttpServer;
 typedef SimpleWeb::Client<SimpleWeb::HTTP> HttpClient;
 
+#if !(defined(PRECISE_GC_SERIAL) || defined(PRECISE_GC_CMS))
+template <typename Function, typename... Args>
+    std::thread create_thread(Function&& f, Args&&... args)
+    {
+        return std::thread(std::forward<Function>(f), std::forward<Args>(args)...);
+    };
+#endif
+
 //Added for the default_resource example
 void default_resource_send(const HttpServer &server, ptr_in(HttpServer::Response) response, ptr_in(ifstream) ifs);
 
