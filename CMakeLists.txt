@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 2.8.8)
 project (Simple-Web-Server)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -g")
 
 include_directories(.)
 
@@ -41,16 +41,22 @@ add_executable(http_examples http_examples.cpp)
 target_link_libraries(http_examples ${Boost_LIBRARIES})
 target_link_libraries(http_examples ${CMAKE_THREAD_LIBS_INIT})
 
+add_executable(stress stress.cpp)
+target_link_libraries(stress ${Boost_LIBRARIES})
+target_link_libraries(stress ${CMAKE_THREAD_LIBS_INIT})
+
 if(SHARED_PTR)
     add_definitions(-DSHARED_PTR)
 endif()
 
 if(PRECISE_GC_SERIAL)
+    target_link_libraries(stress ${AllocGC})
     target_link_libraries(http_examples ${AllocGC})
     add_definitions(-DPRECISE_GC_SERIAL)
 endif()
 
 if(PRECISE_GC_CMS)
+    target_link_libraries(stress ${AllocGC})
     target_link_libraries(http_examples ${AllocGC})
     add_definitions(-DPRECISE_GC_CMS)
 endif()
