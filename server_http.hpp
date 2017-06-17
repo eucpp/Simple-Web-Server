@@ -266,15 +266,19 @@ namespace SimpleWeb {
                 return nullptr;
             
             auto timer=new_args_(boost::asio::deadline_timer, *io_service);
-            timer->expires_from_now(boost::posix_time::seconds(seconds));
-            timer->async_wait([socket](const boost::system::error_code& ec){
+            prepare_timeout_timer(*timer, socket, seconds);
+            return timer;
+        }
+
+        void prepare_timeout_timer(boost::asio::deadline_timer& timer, ptr_in(socket_type) socket, long seconds) {
+            timer.expires_from_now(boost::posix_time::seconds(seconds));
+            timer.async_wait([socket](const boost::system::error_code& ec){
                 if(!ec) {
                     boost::system::error_code ec;
                     socket->lowest_layer().shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
                     socket->lowest_layer().close();
                 }
             });
-            return timer;
         }
         
         void read_request_and_content(ptr_in(socket_type) socket) {
@@ -410,13 +414,25 @@ namespace SimpleWeb {
                     callback(ec);
             });
         }
+
+        struct ResponseHandle {
+            boost::asio::deadline_timer timer;
+            Response response;
+
+            ResponseHandle(ptr_t(boost::asio::io_service) io_service, ptr_in(socket_type) socket)
+                : timer(*io_service)
+                , response(socket)
+            { }
+        };
         
         void write_response(ptr_in(socket_type) socket, ptr_in(Request) request,
                 std::function<void(ptr_t(typename ServerBase<socket_type>::Response),
                                    ptr_t(typename ServerBase<socket_type>::Request))>& resource_function) {
             //Set timeout on the following boost::asio::async-read or write function
-            auto timer=this->get_timeout_timer(socket, config.timeout_content);
-            auto response = new_args_(Response, socket);
+            auto handle = new_args_(ResponseHandle, this->io_service, socket);
+            this->prepare_timeout_timer(handle->timer, socket, config.timeout_content);
+//            auto timer=this->get_timeout_timer(socket, config.timeout_content);
+            auto response = ptr_to(handle, ResponseHandle, Response, &ResponseHandle::response);
 
             try {
                 resource_function(response, request);
@@ -427,11 +443,11 @@ namespace SimpleWeb {
                 return;
             }
 
-            this->send(response, [this, timer, response, request](const boost::system::error_code& ec) {
-                if(timer)
-                    timer->cancel();
+            this->send(response, [this, handle, request](const boost::system::error_code& ec) {
+//                if(handle->timer)
+                    handle->timer.cancel();
                 if(!ec) {
-                    if (response->close_connection_after_response)
+                    if (handle->response.close_connection_after_response)
                         return;
 
                     auto range=request->header.equal_range("Connection");
@@ -439,12 +455,12 @@ namespace SimpleWeb {
                         if(boost::iequals(it->second, "close")) {
                             return;
                         } else if (boost::iequals(it->second, "keep-alive")) {
-                            read_request_and_content(response->socket);
+                            read_request_and_content(handle->response.socket);
                             return;
                         }
                     }
                     if(request->http_version >= "1.1")
-                        read_request_and_content(response->socket);
+                        read_request_and_content(handle->response.socket);
                 }
                 else if(on_error)
                     on_error(request, ec);

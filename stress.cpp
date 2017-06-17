@@ -37,7 +37,7 @@ template <typename Function, typename... Args>
 int main(int argc, const char* argv[]) {
 
     #if defined(PRECISE_GC_SERIAL) || defined(PRECISE_GC_CMS)
-//        enable_logging(gc_loglevel::INFO);
+//        enable_logging(gc_loglevel::DEBUG);
         set_threads_available(1);
         register_main_thread();
     #endif
@@ -77,6 +77,12 @@ int main(int argc, const char* argv[]) {
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now() - tm).count();
     std::cout << "Completed in " << elapsed << " ms" << std::endl;
+    #if defined(PRECISE_GC_SERIAL) || defined(PRECISE_GC_CMS)
+        gc_stat stat = stats();
+        std::cout << "Completed " << stat.gc_count << " collections" << std::endl;
+        std::cout << "Time spent in gc " << std::chrono::duration_cast<std::chrono::milliseconds>(stat.gc_time).count() << " ms" << std::endl;
+        std::cout << "Average pause time " << std::chrono::duration_cast<std::chrono::microseconds>(stat.gc_time / stat.gc_count).count() << " us" << std::endl;
+    #endif
 
     server.stop();
     server_thread.join();
